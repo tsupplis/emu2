@@ -11,6 +11,7 @@ extern uint8_t memory[];
 int cpuGetAddress(uint16_t segment, uint16_t offset);
 int cpuGetAddrDS(uint16_t offset);
 int cpuGetAddrES(uint16_t offset);
+int cpuGetAddrSS(uint16_t offset);
 
 // Reads a word from the stack at displacement "disp"
 uint16_t cpuGetStack(uint16_t disp);
@@ -82,12 +83,24 @@ void cpuClrFlag(enum cpuFlags flag);
 void cpuSetStartupFlag(enum cpuFlags flag);
 void cpuClrStartupFlag(enum cpuFlags flag);
 
+#include "ems.h"
+
 // Helper functions to access memory
+// Read 16 bit number
+static inline void put8(int addr, int v)
+{
+    if (in_ems_pageframe(addr)) {
+	ems_put8(addr, v);
+	return;
+    }
+    memory[0xFFFFF & (addr)] = v;
+}
+
 // Read 16 bit number
 static inline void put16(int addr, int v)
 {
-    memory[0xFFFFF & (addr)] = v;
-    memory[0xFFFFF & (addr + 1)] = v >> 8;
+    put8(addr, v);
+    put8(addr + 1, v >> 8);
 }
 
 // Read 32 bit number
@@ -97,10 +110,20 @@ static inline void put32(int addr, unsigned v)
     put16(addr + 2, v >> 16);
 }
 
+// Write 8 bit number
+static inline int get8(int addr)
+{
+    if (in_ems_pageframe(addr)) 
+    {
+	    return ems_get8(addr);
+    }
+    return memory[0xFFFFF & addr];
+}
+
 // Write 16 bit number
 static inline int get16(int addr)
 {
-    return memory[0xFFFFF & addr] + (memory[0xFFFFF & (addr + 1)] << 8);
+    return get8(addr) + (get8(addr + 1) << 8);
 }
 
 // Write 32 bit number
@@ -114,6 +137,13 @@ static inline int putmem(uint32_t dest, const uint8_t *src, unsigned size)
 {
     if(size >= 0x100000 || dest >= 0x100000 || size + dest >= 0x100000)
         return 1;
+    if (in_ems_pageframe(dest)) 
+    {
+        unsigned i;
+        for (i = 0; i < size; i++)
+            ems_put8(dest++, *src++);
+        return 0;
+    }
     memcpy(memory + dest, src, size);
     return 0;
 }
@@ -122,6 +152,8 @@ static inline int putmem(uint32_t dest, const uint8_t *src, unsigned size)
 static inline uint8_t *getptr(uint32_t addr, unsigned size)
 {
     if(size >= 0x100000 || addr >= 0x100000 || size + addr >= 0x100000)
+        return 0;
+    if (in_ems_pageframe(addr))
         return 0;
     return memory + addr;
 }
@@ -135,8 +167,18 @@ static inline char *getstr(uint32_t addr, unsigned size)
 
     cbuf = (cbuf + 1) & 3;
     memset(buf[cbuf], 0, 256);
-    if(size < 255 && addr < 0x100000 && size + addr < 0x100000)
-        memcpy(buf[cbuf], memory + addr, size);
+    if (size < 255 && in_ems_pageframe(addr)) 
+    {
+        int i;
+        char *p = buf[cbuf];
+        for (i = 0; i < size; i++) 
+        {
+            *p++ = ems_get8(addr++);
+        }
+    }
+    else
+        if(size < 255 && addr < 0x100000 && size + addr < 0x100000)
+            memcpy(buf[cbuf], memory + addr, size);
     return buf[cbuf];
 }
 
