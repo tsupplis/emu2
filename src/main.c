@@ -8,6 +8,7 @@
 #include "keyb.h"
 #include "timer.h"
 #include "video.h"
+#include "ems.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -115,6 +116,8 @@ void bios_routine(unsigned inum)
         int2a();
     else if(inum == 0x2f)
         int2f();
+    else if(inum == 0x67)
+         int67();
     else if(inum == 0x8)
         ; // Timer interrupt - nothing to do
     else if(inum == 0x9)
