@@ -33,6 +33,7 @@ void print_usage(void)
            "  %-18s  Set DOS code-page. Set to '?' to show list of code-pages.\n"
            "  %-18s  Limit DOS memory to 512KB, fixes some old buggy programs.\n"
            "  %-18s  Specifies a DOS append paths, separated by ';'.\n"
+           "  %-18s  Setup text mode with given number of rows, from 12 to 50.\n"
            "  %-18s  specifies EMS memory page count (0 to 2048), default is\n"
            "\t\t      256.\n",
            prog_name, ENV_DBG_NAME, ENV_DBG_OPT, ENV_PROGNAME, ENV_DEF_DRIVE, ENV_CWD,
