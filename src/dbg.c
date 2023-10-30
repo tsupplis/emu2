@@ -36,7 +36,7 @@ void print_usage(void)
            "  %-18s  specifies EMS memory page count (0 to 2048), default is\n"
            "\t\t      256.\n",
            prog_name, ENV_DBG_NAME, ENV_DBG_OPT, ENV_PROGNAME, ENV_DEF_DRIVE, ENV_CWD,
-           ENV_DRIVE "n", ENV_CODEPAGE, ENV_LOWMEM, ENV_APPEND, ENV_EMSMEM);
+           ENV_DRIVE "n", ENV_CODEPAGE, ENV_LOWMEM, ENV_APPEND, ENV_ROWS, ENV_EMSMEM);
     exit(EXIT_SUCCESS);
 }
 

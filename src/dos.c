@@ -417,7 +417,12 @@ static int dos_rw_record_fcb(int addr, int write, int update, int seq)
     else if(!n || write)
         return 1; // EOF on read, disk full on write
     else
+   {
+        if(!buf_allocated)
+            for(unsigned i = n; i < rsize; i++)
+                buf[i] = 0;
         return 3; // read partial record
+    }
 }
 
 // Converts Unix time_t to DOS time/date
