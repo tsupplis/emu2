@@ -761,14 +761,24 @@ static void dos_get_drive_info(uint8_t drive)
 }
 
 // Writes a character to standard output.
-static void dos_putchar(uint8_t ch)
+static void dos_putchar(uint8_t ch, int fd)
 {
-    if(devinfo[1] == 0x80D3 && video_active())
-        video_putch(ch);
-    else if(!handles[1])
+    if(devinfo[fd] == 0x80D3 && video_active())
+    {
+        // Handle TAB character here:
+        if(ch == 0x09)
+        {
+            int n = 8 - (7 & video_get_col());
+            while(n--)
+                video_putch(' ');
+        }
+        else
+            video_putch(ch);
+    }
+    else if(!handles[fd])
         putchar(ch);
     else
-        fputc(ch, handles[1]);
+        fputc(ch, handles[fd]);
 }
 
 static void int21_9(void)
@@ -776,7 +786,7 @@ static void int21_9(void)
     int i = cpuGetAddrDS(cpuGetDX());
 
     for(; memory[i] != 0x24 && i < 0x100000; i++)
-        dos_putchar(memory[i]);
+        dos_putchar(memory[i], 1);
 
     cpuSetAL(0x24);
 }
@@ -1065,10 +1075,10 @@ void int21()
         exit(0);
     case 1: // CHARACTER INPUT WITH ECHO
         char_input(1);
-        dos_putchar(cpuGetAX() & 0xFF);
+        dos_putchar(cpuGetAX() & 0xFF, 1);
         break;
     case 2: // PUTCH
-        dos_putchar(cpuGetDX() & 0xFF);
+        dos_putchar(cpuGetDX() & 0xFF, 1);
         cpuSetAX(0x0200 | (cpuGetDX() & 0xFF)); // from intlist.
         break;
     case 0x6: // CONSOLE OUTPUT
@@ -1087,7 +1097,7 @@ void int21()
         }
         else
         {
-            dos_putchar(cpuGetDX() & 0xFF);
+            dos_putchar(cpuGetDX() & 0xFF, 1);
             cpuSetAL(cpuGetDX());
         }
         break;
@@ -1508,7 +1518,8 @@ void int21()
     }
     case 0x40: // WRITE
     {
-        FILE *f = handles[cpuGetBX()];
+        int fd = cpuGetBX();
+        FILE *f = handles[fd];
         if(!f)
         {
             cpuSetFlag(cpuFlag_CF);
@@ -1535,10 +1546,10 @@ void int21()
             cpuSetFlag(cpuFlag_CF);
             break;
         }
-        if(devinfo[cpuGetBX()] == 0x80D3 && video_active())
+        if(devinfo[fd] == 0x80D3)
         {
             for(unsigned i = 0; i < len; i++)
-                video_putch(buf[i]);
+                dos_putchar(buf[i], fd);
             cpuSetAX(len);
         }
         else
@@ -2345,14 +2356,5 @@ void int29(void)
     // Fast video output
     debug(debug_int, "D-29: AX=%04X\n", ax);
     debug(debug_dos, "D-29:   fast console out  AX=%04X\n", ax);
-
-    int ch = ax & 0xFF;
-    // If stdout is redirected or video is active, writes to video screen:
-    if(devinfo[1] != 0x80D3 || video_active())
-        video_putch(ch);
-    // Else, write to console
-    else if(!handles[1])
-        putchar(ch);
-    else
-        fputc(ch, handles[1]);
+    dos_putchar(ax & 0xFF, 1);
 }
