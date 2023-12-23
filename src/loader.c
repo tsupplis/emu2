@@ -620,7 +620,7 @@ Offset  Length  Description
 
 // Creates main PSP
 uint16_t create_PSP(const char *cmdline, const char *environment, int env_size,
-                    const char *progname)
+                    const char *progname, int dosver)
 {
     // Put environment before PSP and program name, use rounded up environment size:
     int max;
@@ -683,6 +683,8 @@ uint16_t create_PSP(const char *cmdline, const char *environment, int env_size,
     dosPSP[23] = 0xFF;                  //     to signal no parent DOS process
     dosPSP[44] = 0xFF & env_seg;        // 2C: environment segment
     dosPSP[45] = 0xFF & (env_seg >> 8); //
+    dosPSP[64] = dosver & 0xFF;
+    dosPSP[65] = (dosver>>8) & 0xFF;
     dosPSP[80] = 0xCD;                  // 50: INT 21h / RETF
     dosPSP[81] = 0x21;                  //
     dosPSP[82] = 0xCB;                  //

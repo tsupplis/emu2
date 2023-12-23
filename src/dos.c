@@ -2327,7 +2327,7 @@ void init_dos(int argc, char **argv)
     }
 
     // Create main PSP
-    int psp_mcb = create_PSP(args, environ, p - environ + 1, progname);
+    int psp_mcb = create_PSP(args, environ, p - environ + 1, progname, dosver);
 
     // Load program
     const char *name = argv[0];

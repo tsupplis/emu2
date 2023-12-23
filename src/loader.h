@@ -5,7 +5,7 @@
 
 // EXE loader
 uint16_t create_PSP(const char *cmdline, const char *environment, int env_size,
-                    const char *progname);
+                    const char *progname, int dosver);
 unsigned get_current_PSP(void);
 void set_current_PSP(unsigned psp_seg);
 
