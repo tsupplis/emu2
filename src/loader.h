@@ -22,3 +22,4 @@ void mcb_init(uint16_t mem_start, uint16_t mem_end);
 // Loaders
 int dos_load_exe(FILE *f, uint16_t psp_mcb);
 int dos_read_overlay(FILE *f, uint16_t load_seg, uint16_t reloc_seg);
+void mem_free_owned(uint16_t psp_seg);

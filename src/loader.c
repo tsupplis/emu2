@@ -598,6 +598,19 @@ int mem_alloc_segment(int size, int *max)
         return 0;
 }
 
+void mem_free_owned(uint16_t psp_seg)
+{
+    int mcb = mcb_start;
+    while (1)
+    {
+        if(mcb_owner(mcb) == psp_seg)
+            mcb_free(mcb);
+        if(mcb_is_last(mcb))
+            break;
+        mcb = mcb_next(mcb);
+    }
+}
+
 /* The PSP block is before the loaded program:
 
 Offset  Length  Description

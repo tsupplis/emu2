@@ -61,6 +61,7 @@ static uint32_t get_static_memory(uint16_t bytes, uint16_t align)
 #define max_handles (0x10000)
 static FILE *handles[max_handles];
 static int devinfo[max_handles];
+static unsigned handle_owners[max_handles];
 
 static int guess_devinfo(FILE *f)
 {
@@ -85,6 +86,8 @@ static void init_handles(void)
     // stdin,stdout,stderr: special, eof on input, is device
     for(int i = 0; i < 3; i++)
         devinfo[i] = guess_devinfo(handles[i]);
+    for(int i = 0; i < 5; i++)
+        handle_owners[i] = 0;
 }
 
 static int get_new_handle(void)
@@ -107,6 +110,7 @@ static int dos_close_file(int h)
     }
     handles[h] = 0;
     devinfo[h] = 0;
+    handle_owners[h] = 0;
     cpuClrFlag(cpuFlag_CF);
     for(int i = 0; i < max_handles; i++)
         if(handles[i] == f)
@@ -115,6 +119,13 @@ static int dos_close_file(int h)
         return 0; // Never close standard streams
     fclose(f);
     return 0;
+}
+
+static void dos_close_allfile_owned(unsigned psp_seg)
+{
+    for(int i = 0; i < max_handles; i++)
+        if(handles[i] && handle_owners[i] == psp_seg)
+            dos_close_file(i);
 }
 
 static void create_dir(void)
@@ -251,6 +262,7 @@ static void dos_open_file(int create)
     }
     else
         devinfo[h] = 0x0000 + dos_get_default_drive();
+    handle_owners[h] = get_current_PSP();
     debug(debug_dos, "OK.\n");
     cpuClrFlag(cpuFlag_CF);
     cpuSetAX(h);
@@ -317,6 +329,7 @@ static void dos_open_file_fcb(int create)
         free(fname);
         return;
     }
+    handle_owners[h] = get_current_PSP();
     // Get file size
     fseek(handles[h], 0, SEEK_END);
     long sz = ftell(handles[h]);
@@ -420,7 +433,7 @@ static int dos_rw_record_fcb(int addr, int write, int update, int seq)
     else if(!n || write)
         return 1; // EOF on read, disk full on write
     else
-   {
+    {
         if(!buf_allocated)
             for(unsigned i = n; i < rsize; i++)
                 buf[i] = 0;
@@ -1073,14 +1086,16 @@ void int21()
 
     switch(ah)
     {
-    case 0: // TERMINATE PROGRAM
+    case 0x0: // TERMINATE PROGRAM
         exit(0);
-    case 1: // CHARACTER INPUT WITH ECHO
+    case 0x1: // CHARACTER INPUT WITH ECHO
         char_input(1);
         dos_putchar(cpuGetAX() & 0xFF, 1);
+        check_screen();
         break;
-    case 2: // PUTCH
+    case 0x2: // PUTCH
         dos_putchar(cpuGetDX() & 0xFF, 1);
+        check_screen();
         cpuSetAX(0x0200 | (cpuGetDX() & 0xFF)); // from intlist.
         break;
     case 0x6: // CONSOLE OUTPUT
@@ -1111,6 +1126,7 @@ void int21()
         break;
     case 0x9: // WRITE STRING
         int21_9();
+        check_screen();
         break;
     case 0xA: // BUFFERED INPUT
     {
@@ -1127,7 +1143,28 @@ void int21()
         unsigned len = memory[addr], i = 2;
         while(i < len && addr + i < 0x100000)
         {
-            int c = getc(f);
+            int c;
+            if(devinfo[0] == 0x80D3)
+            {
+                char_input(1);
+                c = cpuGetAX() & 0xFF;
+                if(c == 0x08 || c == 0x7f) // backspace or delete
+                {
+                    if(i > 2)
+                    {
+                        dos_putchar(0x08, 1);
+                        dos_putchar(' ', 1);
+                        dos_putchar(0x08, 1);
+                        i--;
+                    }
+                    continue;
+                }
+                dos_putchar(c, 1);
+            }
+            else
+            {
+                c = getc(f);
+            }
             if(c == '\n' || c == EOF)
                 c = '\r';
             memory[addr + i] = (char)c;
@@ -1552,6 +1589,7 @@ void int21()
         {
             for(unsigned i = 0; i < len; i++)
                 dos_putchar(buf[i], fd);
+            check_screen();
             cpuSetAX(len);
         }
         else
@@ -1694,6 +1732,8 @@ void int21()
             break;
         case 0x0E: // GET LOGICAL DRIVE MAP
             cpuSetAX(0x4400);
+        default: 
+            cpuSetFlag(cpuFlag_CF);
         }
         break;
     }
@@ -1717,6 +1757,7 @@ void int21()
         debug(debug_dos, "\t%04x -> %04x\n", cpuGetBX(), h);
         handles[h] = handles[cpuGetBX()];
         devinfo[h] = devinfo[cpuGetBX()];
+        handle_owners[h] = get_current_PSP();
         cpuSetAX(h);
         cpuClrFlag(cpuFlag_CF);
         break;
@@ -1852,6 +1893,96 @@ void int21()
             else
                 cpuClrFlag(cpuFlag_CF);
         }
+        else if((ax & 0xFF) == 1)
+        {
+            debug(debug_dos, "load: '%s'\n", fname);
+            int cur_psp = get_current_PSP();
+
+            // Get executable file name:
+            char *prgname = getstr(cpuGetAddrDS(cpuGetDX()), 64);
+            // Read command line parameters:
+            int pb = cpuGetAddrES(cpuGetBX());
+            int cmd_addr = cpuGetAddress(get16(pb + 4), get16(pb + 2));
+            int clen = memory[cmd_addr];
+            char *cmdline = getstr(cmd_addr + 1, clen);
+            debug(debug_dos, "\tload command line: '%s %.*s'\n", prgname, clen, cmdline);
+
+            uint16_t env_seg = get16(pb);
+            if(!env_seg)
+                env_seg = get16(cpuGetAddress(get_current_PSP(), 0x2C));
+            int eaddr = cpuGetAddress(env_seg, 0);
+            int elen = 0;
+            char *env = "\0\0";
+            
+            // Sanitize env
+            while(memory[eaddr] != 0 && eaddr < 0xFFFFF)
+            {
+                while(memory[eaddr] != 0 && eaddr < 0xFFFFF)
+                    eaddr++;
+                eaddr++;
+            }
+            if(eaddr < 0xFFFFF)
+            {
+                elen = eaddr - cpuGetAddress(env_seg, 0);
+                env = (char *)(memory + cpuGetAddress(env_seg, 0));
+            }
+            
+            int psp_mcb = create_PSP(cmdline, env, elen, prgname, dosver);
+            if(psp_mcb == 0)
+            {
+                cpuSetAX(8); // insufficient memory
+                cpuSetFlag(cpuFlag_CF);
+                break;
+            }
+
+            // save registers
+            unsigned saveCX = cpuGetCX();
+            unsigned saveSI = cpuGetSI();
+            unsigned saveDI = cpuGetDI();
+            unsigned saveBP = cpuGetBP();
+            unsigned saveSP = cpuGetSP();
+            unsigned saveIP = cpuGetIP();
+            unsigned saveCS = cpuGetCS();
+            unsigned saveDS = cpuGetDS();
+            unsigned saveES = cpuGetES();
+            unsigned saveSS = cpuGetSS();
+            
+            // Load program
+            FILE *f = fopen(fname, "rb");
+            if(!f)
+                print_error("can't open '%s': %s\n", fname, strerror(errno));
+            if(!dos_load_exe(f, psp_mcb))
+                print_error("error loading EXE/COM file.\n");
+            fclose(f);
+
+            // Push AX
+            put16(cpuGetAddress(cpuGetSS(), cpuGetSP()-2), cpuGetAX());
+            
+            // Save SS:SP & CS:IP
+            put16(pb+14, cpuGetSP()-2);
+            put16(pb+16, cpuGetSS());
+            put16(pb+18, cpuGetIP());
+            put16(pb+20, cpuGetCS());
+
+            // Restore regs
+            cpuSetCX(saveCX);
+            cpuSetSI(saveSI);
+            cpuSetDI(saveDI);
+            cpuSetBP(saveBP);
+            cpuSetSP(saveSP);
+            cpuSetIP(saveIP);
+            cpuSetCS(saveCS);
+            cpuSetDS(saveDS);
+            cpuSetES(saveES);
+            cpuSetSS(saveSS);
+            
+            // Set parent PSP to the current one
+            put16(cpuGetAddress(psp_mcb+1, 22), cur_psp);
+            set_current_PSP(psp_mcb+1);
+
+            cpuClrFlag(cpuFlag_CF);
+            cpuSetAX(0);
+        }
         else
         {
             debug(debug_dos, "\texec '%s': type %02xh not supported.\n", fname,
@@ -1862,6 +1993,7 @@ void int21()
         free(fname);
         break;
     }
+    case 0x31: // Terminate and Stay Resident
     case 0x4C: // EXIT
         // Detect if our PSP is last one
         debug(debug_dos, "\texit PSP:'%04x', PARENT:%04x.\n", get_current_PSP(),
@@ -1871,8 +2003,6 @@ void int21()
         else
         {
             // Exit to parent
-            // TODO: we must close all child file descriptors and dealocate
-            //       child memory.
             return_code = cpuGetAX() & 0xFF;
             // Patch INT 22h, 23h and 24h addresses to the ones saved in new PSP
             put16(0x88, get16(cpuGetAddress(get_current_PSP(), 10)));
@@ -1881,6 +2011,13 @@ void int21()
             put16(0x8E, get16(cpuGetAddress(get_current_PSP(), 16)));
             put16(0x90, get16(cpuGetAddress(get_current_PSP(), 18)));
             put16(0x92, get16(cpuGetAddress(get_current_PSP(), 20)));
+            if ((ax & 0xff00) == 0x4c00)
+            {
+                // Deallocate child memory
+                mem_free_owned(get_current_PSP());
+                // Close all files
+                dos_close_allfile_owned(get_current_PSP());
+            }
             // Set PSP to parent
             set_current_PSP(get16(cpuGetAddress(get_current_PSP(), 22)));
             // Get last stack
@@ -1983,6 +2120,28 @@ void int21()
     case 0x5B: // CREATE NEW FILE
         dos_open_file(2);
         break;
+    case 0x60: // TRUENAME - CANONICALIZE FILENAME OR PATH
+    {
+        char *path = (char *)getptr(cpuGetAddrDS(cpuGetSI()), 64);
+        char *truename = (char *)getptr(cpuGetAddrES(cpuGetDI()), 128);
+        char *no_drive_path = truename + 3;
+        if(strlen(path) > 63)
+        {
+            cpuSetFlag(cpuFlag_CF);
+        }
+        else
+        {
+            strncpy(no_drive_path, path, 64);
+            no_drive_path[64] = 0;
+            int drive = dos_path_normalize(no_drive_path);
+            truename[2] = '\\';
+            truename[1] = ':';
+            truename[0] = 'A' + drive;
+            cpuClrFlag(cpuFlag_CF);
+            cpuSetAX(0x5C);
+        }
+        break;
+    }
     case 0x62: // GET PSP SEGMENT
         cpuSetBX(get_current_PSP());
         break;
@@ -2227,20 +2386,20 @@ void init_dos(int argc, char **argv)
     memory[0x000C0] = 0xCD;
     memory[0x000C1] = 0x21;
 
-     const char *emsmem = getenv(ENV_EMSMEM);
-     int ems_pages = 256;
+    const char *emsmem = getenv(ENV_EMSMEM);
+     int ems_pages = 64;
      if (emsmem != NULL) 
      {
         char *ep;
         ems_pages = strtol(emsmem, &ep, 0);
         if (*ep  || ems_pages < 0 || ems_pages > 2048)
             print_error("%s must be set between 0 to 2048\n", ENV_EMSMEM);
-     }
-     if (ems_pages != 0) 
-     {
-        debug(debug_dos, "set EMS pages = %d\n", ems_pages);
-        init_ems(ems_pages);
-     }
+    }
+    if (ems_pages != 0) 
+    {
+       debug(debug_dos, "set EMS pages = %d\n", ems_pages);
+       init_ems(ems_pages);
+    }
 
     // Init memory handling - available start address at 0x800,
     // ending address at 0xA0000.

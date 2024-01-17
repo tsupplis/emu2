@@ -1,2 +1,4 @@
+do_build
+Makefile.osx
 emu2
 obj/

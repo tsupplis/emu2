@@ -347,7 +347,7 @@ int67(void)
 	break;
 	    
     case 0x46: // Get EMM version
-	cpuSetAX(0x0040); // LIM-EMS 4.0
+	cpuSetAX(0x0032); // LIM-EMS 3.2
 	break;
 	
     case 0x47: // Save mapping context

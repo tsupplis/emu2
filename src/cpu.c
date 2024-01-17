@@ -55,7 +55,7 @@ static void SetMemB(uint16_t seg, uint16_t off, uint8_t val)
 
 static uint8_t GetMemB(int seg, uint16_t off)
 {
-    return memory[0xFFFFF & (sregs[seg] * 16 + off)];
+    return GetMemAbsB(sregs[seg] * 16 + off);
 }
 
 static void SetMemW(uint16_t seg, uint16_t off, uint16_t val)

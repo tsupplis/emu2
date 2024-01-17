@@ -1,3 +1,3 @@
 #pragma once
 
-#define EMU2_VERSION "2023.12-TS"
+#define EMU2_VERSION "2024.01.16-TS"

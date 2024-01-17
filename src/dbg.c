@@ -36,7 +36,7 @@ void print_usage(void)
            "  %-18s  Set version of DOS to emulate, e.g. '2.11', '3.20', etc.\n"
            "  %-18s  Setup text mode with given number of rows, from 12 to 50.\n"
            "  %-18s  Specifies EMS memory page count (0 to 2048), default is\n"
-           "\t\t      256.\n",
+           "\t\t      64~1MB.\n",
            prog_name, ENV_DBG_NAME, ENV_DBG_OPT, ENV_PROGNAME, ENV_DEF_DRIVE, ENV_CWD,
            ENV_DRIVE "n", ENV_CODEPAGE, ENV_LOWMEM, ENV_APPEND, ENV_DOSVER, ENV_ROWS, 
            ENV_EMSMEM);
