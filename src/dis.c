@@ -559,8 +559,6 @@ enum segments
     NoSeg
 };
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreturn-type"
 // Show ins disassembly
 const char *disa(const uint8_t *ip, uint16_t reg_ip, int segment_override)
 {
@@ -826,4 +824,3 @@ const char *disa(const uint8_t *ip, uint16_t reg_ip, int segment_override)
     case 0xff: return decode_ff(ip, segment_override);
     }
 }
-#pragma clang diagnostic pop
