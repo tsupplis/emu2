@@ -1002,15 +1002,33 @@ static void int21_debug(void)
         "(net redir)", "truename", "n/a", "get PSP", "intl char info", // 5F-63
         "(internal)", "get ext country info"
     };
-    unsigned ax = cpuGetAX();
     const char *fn;
-    if((ax >> 8) < (sizeof(func_names) / sizeof(func_names[0])))
-        fn = func_names[ax >> 8];
+    static int count = 0;
+    static struct regs
+    {
+        int ax, bx, cx, dx, di, ds, es;
+    } last = {0, 0, 0, 0, 0, 0, 0};
+    struct regs cur = {cpuGetAX(), cpuGetBX(), cpuGetCX(), cpuGetDX(),
+                       cpuGetDI(), cpuGetDS(), cpuGetES()};
+    // Check if we have a repeated log
+    if(!memcmp(&cur, &last, sizeof(struct regs)))
+    {
+        count++;
+        return;
+    }
+    else if(count)
+        debug(debug_dos, "        : (repeated %d times)\n", count + 1);
+    // Not repeated, reset count and save register values
+    count = 0;
+    last = cur;
+
+    if((cur.ax >> 8) < (sizeof(func_names) / sizeof(func_names[0])))
+        fn = func_names[cur.ax >> 8];
     else
         fn = "(unknown)";
 
     debug(debug_dos, "D-21%04X: %-15s BX=%04X CX:%04X DX:%04X DI=%04X DS:%04X ES:%04X\n",
-          ax, fn, cpuGetBX(), cpuGetCX(), cpuGetDX(), cpuGetDI(), cpuGetDS(), cpuGetES());
+          cur.ax, fn, cur.bx, cur.cx, cur.dx, cur.di, cur.ds, cur.es);
 }
 
 // DOS int 2f
@@ -1578,6 +1596,24 @@ void int21()
                 ems_getmem(buf, addr, len);
             }
         }
+        // If len=0, file is truncated at current position:
+        if(!len)
+        {
+            cpuClrFlag(cpuFlag_CF);
+            // flush output
+            int e = fflush(f);
+            if(e)
+                cpuSetFlag(cpuFlag_CF);
+            else if(devinfo[fd] != 0x80D3)
+            {
+                off_t pos = ftello(f);
+                if(pos != -1 && -1 == ftruncate(fileno(f), pos))
+                    cpuSetFlag(cpuFlag_CF);
+            }
+            break;
+        }
+        uint8_t *buf = getptr(cpuGetAddrDS(cpuGetDX()), len);
+>>>>>>> master
         if(!buf)
         {
             debug(debug_dos, "\tbuffer pointer invalid\n");
