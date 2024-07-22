@@ -1617,10 +1617,10 @@ void int21()
                     cpuSetAX(5); // access denied
                 }
             }
+            if (buf_allocated)
+                free(buf);
             break;
         }
-        uint8_t *buf = getptr(cpuGetAddrDS(cpuGetDX()), len);
->>>>>>> master
         if(!buf)
         {
             debug(debug_dos, "\tbuffer pointer invalid\n");
